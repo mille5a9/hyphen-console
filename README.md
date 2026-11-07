@@ -5,14 +5,15 @@ A small self-hosted console for an indie developer with apps on the App Store an
 **Today:**
 - One download page per app for test builds (Android APKs with their Play bundles, and iOS IPAs), so a phone can install the latest build straight from the NAS.
 - Health checks on each app's backend, with uptime history and an email when something goes down and when it recovers.
+- Reviews from the App Store and Google Play, kept over time, with an email when new ones arrive.
 
-**Next:** crash and ANR rates and new reviews from both stores, in the same place. See [Roadmap](#roadmap).
+**Next:** crash and ANR rates from both stores, in the same place. See [Roadmap](#roadmap).
 
 <img src="docs/builds-page.png" alt="An app's builds page: the newest Android build on top, iPhone builds, then every Android build with its Play bundle" width="360">
 
 ## Design
 
-- **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping). The server uses only Node built-ins: `node:http`, `node:fs`, and `node:sqlite` for check history. `typescript` and `@types/node` are dev-only, for type checking.
+- **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping). The server uses only Node built-ins: `node:http`, `node:fs`, `node:sqlite` for history, and `node:crypto` to sign the JWTs the store APIs require (ES256 for Apple, RS256 for Google). `typescript` and `@types/node` are dev-only, for type checking.
 - **Configuration lives outside the repo.** Machine-specific settings go in `.env` and `config/apps.json`, and git ignores both. The committed `.env.example` and `config/apps.example.json` hold only placeholders. API keys for later phases will go in `secrets/`, which git also ignores.
 - **Private by default.** The server refuses any client outside an allowlist of CIDRs: private LAN ranges, Docker's bridge, loopback and Tailscale. Override it with `ALLOWED_CIDRS`. It answers only `GET` and `HEAD`.
 - **Serves build files only.** File URLs must name a build of that app (`<prefix>-<x.y.z>….apk|aab|ipa`, or its `.sha256`). Other files in the folder, paths and dot files are never served. Downloads support byte ranges, so a phone can resume a large APK.
@@ -67,6 +68,18 @@ Alerts go out through [Cloudflare Email Sending](https://developers.cloudflare.c
 
 `docker exec hyphen-console node src/cli.ts check` runs every health check once and prints the results.
 
+### Reviews
+
+Each store is used once its credentials are in `secrets/`. Apps are matched by `ios.bundleId` (or `ios.appStoreId`) and `android.package` in `config/apps.json`.
+
+**App Store Connect:** in App Store Connect, go to Users and Access → Integrations → App Store Connect API → Team Keys and generate a key with the **Customer Support** role. Save the `.p8` file as `secrets/app-store-connect.p8`, and set `APP_STORE_CONNECT_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID` in `.env`. Requests are signed with a short-lived ES256 JWT.
+
+**Google Play:** in a Google Cloud project, enable the Google Play Android Developer API and create a service account with a JSON key. Save the key as `secrets/google-play-service-account.json`. Then invite the service account's email in Play Console (Users and permissions), with **Reply to reviews** and **View app information** permissions for the app. Google's API only returns reviews with written comments, created or edited in the last 7 days, for production releases. That's why the console fetches every hour and keeps everything it sees.
+
+The first successful fetch from each store only fills the history, so no email goes out for old reviews. After that, new and edited reviews are emailed in one message per fetch, and 1–2 star reviews are flagged in the subject. Set `REVIEW_EMAILS=low` to get only those, or `off` for none.
+
+`docker exec hyphen-console node src/cli.ts reviews` tests the credentials: it fetches one page from each store and saves nothing.
+
 ### Settings
 
 | Variable | Default | Meaning |
@@ -83,6 +96,10 @@ Alerts go out through [Cloudflare Email Sending](https://developers.cloudflare.c
 | `ALERT_EMAIL_TO` | — | Alert recipient. Empty means alerts are only logged |
 | `ALERT_EMAIL_FROM` | — | Sender, on a domain onboarded to Cloudflare Email Sending |
 | `CLOUDFLARE_ACCOUNT_ID` | — | The Cloudflare account that sends |
+| `REVIEW_SYNC_MINUTES` | `60` | Time between review fetches (minimum 15) |
+| `REVIEW_EMAILS` | `all` | Which new reviews to email: `all`, `low` (1–2 stars) or `off` |
+| `APP_STORE_CONNECT_KEY_ID` | — | App Store Connect API key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | — | App Store Connect issuer ID |
 
 ## API
 
@@ -90,6 +107,7 @@ Alerts go out through [Cloudflare Email Sending](https://developers.cloudflare.c
 |---|---|
 | `GET /api/apps` | `[{ id, name }]` |
 | `GET /api/status` | Every health check: up or down, since when, the last result, and 24-hour and 7-day uptime |
+| `GET /api/apps/<id>/reviews` | `{ summary, sync, reviews }`: rating per store, last fetch per store, newest 50 reviews |
 | `GET /api/apps/<id>/builds` | `{ app, android: Build[], ios: Build[] }`, newest first |
 | `GET /files/<id>/<file>` | The build file, with range support |
 | `GET /healthz` | `ok` |
@@ -106,7 +124,7 @@ CONFIG_FILE=config/apps.json BUILDS_ROOT=/path/to/builds PORT=8096 npm run dev
 
 1. ~~Multi-app builds page~~
 2. ~~Health checks for each app's backend, with email alerts~~
-3. Reviews from both stores, kept over time (Google Play's API only returns the last week)
+3. ~~Reviews from both stores, kept over time~~
 4. Crash and ANR rates (Play Developer Reporting API) and crashes, installs and sessions (App Store Connect Analytics Reports API)
 5. A weekly digest
 

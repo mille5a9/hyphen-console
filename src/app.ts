@@ -15,6 +15,8 @@ export interface Options {
   isAllowed: (address: string | undefined) => boolean;
   /** Current health of every check (see Monitor.status). */
   status?: () => unknown[];
+  /** Saved reviews and per-store summary for one app. */
+  reviews?: (appId: string) => unknown;
   log?: (line: string) => void;
 }
 
@@ -124,6 +126,12 @@ export function createHandler(opts: Options) {
       if (!app) return json(res, 404, { error: "No such app" });
       const builds = await listBuilds(join(opts.buildsRoot, app.id), app.filePrefix, `/files/${app.id}/`);
       return json(res, 200, { app: { id: app.id, name: app.name }, ...builds });
+    }
+
+    m = /^\/api\/apps\/([a-z0-9-]+)\/reviews$/.exec(path);
+    if (m) {
+      if (!byId.has(m[1] ?? "")) return json(res, 404, { error: "No such app" });
+      return json(res, 200, opts.reviews?.(m[1]!) ?? { summary: [], sync: {}, reviews: [] });
     }
 
     m = /^\/files\/([a-z0-9-]+)\/([^/]+)$/.exec(path);

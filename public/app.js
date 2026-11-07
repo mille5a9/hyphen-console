@@ -28,6 +28,13 @@ const checkLine = (c) => {
   return `${dot(c)}${esc(c.name)} up · ${pct(c.uptime7d)} over 7 days`;
 };
 
+const stars = (n) => `<span class="stars" title="${n} of 5">${"★".repeat(n)}<span class="off">${"★".repeat(Math.max(0, 5 - n))}</span></span>`;
+const storeName = (s) => (s === "apple" ? "App Store" : "Google Play");
+const summaryLine = (summary) =>
+  summary
+    .map((x) => `${storeName(x.store)} ${x.average.toFixed(1)}★ (${x.count})${x.recent ? ` · ${x.recent} new this week` : ""}`)
+    .join("<br>");
+
 const row = (b) => {
   const aab = b.aab ? `<a class="side" href="${esc(b.aab.url)}"><b>AAB</b>${mb(b.aab.size)}</a>` : "";
   return `<li><a href="${esc(b.url)}"><span class="name">${label(b)}</span><span class="meta">${when(b.mtime)}<br>${mb(b.size)}</span></a>${aab}</li>`;
@@ -40,24 +47,31 @@ async function showHome() {
     out.innerHTML = '<h1>Apps</h1><p class="msg">No apps yet. Add one to config/apps.json and restart.</p>';
     return;
   }
-  const [lists, status] = await Promise.all([
+  const [lists, status, revs] = await Promise.all([
     Promise.all(apps.map((a) => getJson(`/api/apps/${encodeURIComponent(a.id)}/builds`).catch(() => null))),
     getJson("/api/status").catch(() => []),
+    Promise.all(apps.map((a) => getJson(`/api/apps/${encodeURIComponent(a.id)}/reviews`).catch(() => null))),
   ]);
-  const card = (a, list) => {
+  const card = (a, list, rev) => {
+    const ratings = rev?.summary.length ? `<span class="meta check">${summaryLine(rev.summary)}</span>` : "";
     const checks = status.filter((c) => c.appId === a.id).map((c) => `<span class="meta check">${checkLine(c)}</span>`).join("");
     const newest = [list?.android[0], list?.ios[0]].filter(Boolean).sort((x, y) => y.mtime.localeCompare(x.mtime))[0];
     const meta = !list ? "Couldn't read its builds folder." : newest ? `Newest build ${esc(newest.version)} · ${when(newest.mtime)}` : "No builds yet.";
-    return `<li><a href="/apps/${encodeURIComponent(a.id)}"><span class="name">${esc(a.name)}</span><span class="meta">${meta}</span>${checks}</a></li>`;
+    return `<li><a href="/apps/${encodeURIComponent(a.id)}"><span class="name">${esc(a.name)}</span><span class="meta">${meta}</span>${checks}${ratings}</a></li>`;
   };
-  out.innerHTML = `<h1>Apps</h1><p class="sub">Home network and tailnet only.</p><ul class="apps">${apps.map((a, i) => card(a, lists[i])).join("")}</ul>`;
+  out.innerHTML = `<h1>Apps</h1><p class="sub">Home network and tailnet only.</p><ul class="apps">${apps.map((a, i) => card(a, lists[i], revs[i])).join("")}</ul>`;
 }
 
 async function showApp(id) {
   let data;
   let status = [];
+  let revs = null;
   try {
-    [data, status] = await Promise.all([getJson(`/api/apps/${encodeURIComponent(id)}/builds`), getJson("/api/status").catch(() => [])]);
+    [data, status, revs] = await Promise.all([
+      getJson(`/api/apps/${encodeURIComponent(id)}/builds`),
+      getJson("/api/status").catch(() => []),
+      getJson(`/api/apps/${encodeURIComponent(id)}/reviews`).catch(() => null),
+    ]);
   } catch {
     out.innerHTML = '<p class="msg">Couldn\'t read this app\'s builds. Is the NAS mounted, and is the app in config/apps.json?</p>';
     return;
@@ -72,7 +86,8 @@ async function showApp(id) {
     return `<li><div class="box"><span class="name">${dot(c)}${esc(c.name)}${state}<br><span class="detail">${detail}</span></span><span class="meta">${when_}24 h ${pct(c.uptime24h)} · 7 d ${pct(c.uptime7d)}</span></div></li>`;
   };
   const health = checks.length ? `<section class="status"><h2>Status</h2><ul>${checks.map(checkRow).join("")}</ul></section>` : "";
-  const intro = `<h1>${esc(app.name)}</h1>${health}<h2>Builds</h2><p class="sub">Tap a build to download it, then open it to install. A release's AAB is the bundle for uploading to Google Play, not for installing.</p>`;
+  const reviews = revs ? reviewsSection(revs) : "";
+  const intro = `<h1>${esc(app.name)}</h1>${health}${reviews}<h2>Builds</h2><p class="sub">Tap a build to download it, then open it to install. A release's AAB is the bundle for uploading to Google Play, not for installing.</p>`;
   if (!android.length && !ios.length) {
     out.innerHTML = `${intro}<p class="msg">No builds yet.</p>`;
     return;
@@ -84,6 +99,23 @@ async function showApp(id) {
     // An iPhone can't install an IPA from a page, so this section sits above the long Android list rather than below it.
     (ios.length ? `<section><h2>iPhone</h2><p>For uploading to App Store Connect. On an iPhone, install through TestFlight.</p><ul>${ios.map(row).join("")}</ul></section>` : "") +
     (top ? `<section><h2>All Android builds</h2><ul>${android.map(row).join("")}</ul></section>` : "");
+}
+
+function reviewsSection({ summary, sync, reviews }) {
+  const syncs = Object.entries(sync).filter(([, v]) => v !== undefined);
+  if (!syncs.length && !reviews.length) return "";
+  const problems = syncs
+    .filter(([, v]) => v?.lastError)
+    .map(([k, v]) => `<p class="warn">${storeName(k)}: couldn't fetch reviews (${esc(v.lastError)}). Trying again each hour.</p>`)
+    .join("");
+  const pending = syncs.filter(([, v]) => v === null).map(([k]) => storeName(k));
+  const head = summary.length ? `<p>${summaryLine(summary)}</p>` : `<p>No reviews yet${pending.length ? "" : "."}${pending.length ? ` (first fetch from ${pending.join(" and ")} pending).` : ""}</p>`;
+  const item = (r) => {
+    const meta = [storeName(r.store), r.author, r.locale, r.appVersion && `v${esc(r.appVersion)}`, when(new Date(r.updatedAt).toISOString())].filter(Boolean).map(esc).join(" · ");
+    const reply = r.reply ? `<div class="reply"><b>Your reply</b> ${esc(r.reply.text)}</div>` : "";
+    return `<li><div class="box review">${stars(r.rating)}${r.title ? `<b class="rtitle">${esc(r.title)}</b>` : ""}<p>${esc(r.body)}</p><span class="meta">${meta}</span>${reply}</div></li>`;
+  };
+  return `<section class="reviews"><h2>Reviews</h2>${problems}${head}${reviews.length ? `<ul>${reviews.slice(0, 20).map(item).join("")}</ul>` : ""}</section>`;
 }
 
 const m = /^\/apps\/([a-z0-9-]+)\/?$/.exec(location.pathname);

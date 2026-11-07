@@ -36,3 +36,13 @@ li a.side b { color: var(--text); font-size: 14px; }
 .dot.down { background: #d64545; }
 .apps .check { color: var(--text); }
 .status .detail { font-weight: 400; color: var(--muted); font-size: 13px; }
+.reviews { margin: 0 0 28px; }
+.reviews > p { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+.reviews p.warn { color: #b7791f; }
+li .review { flex-direction: column; justify-content: flex-start; gap: 4px; }
+.review p { margin: 2px 0; overflow-wrap: anywhere; white-space: pre-line; }
+.review .meta { text-align: left; white-space: normal; }
+.rtitle { display: block; }
+.stars { color: #e0a100; letter-spacing: 1px; font-size: 15px; }
+.stars .off { color: var(--border); }
+.reply { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--bg); border-radius: 6px; font-size: 14px; }
