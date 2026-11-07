@@ -63,7 +63,7 @@ if (command === "test-email") {
   for (const app of apps) {
     if (v.google && app.android?.package) {
       try {
-        const rows = await v.google.vitals(app.android.package, "crashRateMetricSet", ["userPerceivedCrashRate28dUserWeighted", "distinctUsers"]);
+        const rows = await v.google.vitals(app.android.package, "crashRateMetricSet", ["crashRate", "userPerceivedCrashRate28dUserWeighted", "distinctUsers"]);
         const last = rows.at(-1);
         console.log(`ok   ${app.id} Google Play: ${rows.length} day(s)${last ? `, latest ${last.date} ${JSON.stringify(last.values)}` : ""}`);
       } catch (e) {

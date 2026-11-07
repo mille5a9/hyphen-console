@@ -146,6 +146,7 @@ export class GoogleClient {
   /**
    * Daily values of a vitals metric set (crashRateMetricSet or anrRateMetricSet) for the last `days` days that have
    * data. Returns nothing while Play has no data yet (a new app, or one not in production).
+   * Ask for at least one daily metric (crashRate, anrRate...): a query for rolling metrics alone comes back empty.
    */
   async vitals(packageName: string, metricSet: "crashRateMetricSet" | "anrRateMetricSet", metrics: string[], days = 30): Promise<VitalsRow[]> {
     const base = `apps/${encodeURIComponent(packageName)}/${metricSet}`;
