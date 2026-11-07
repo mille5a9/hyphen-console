@@ -61,7 +61,7 @@ By default a check passes on any 2xx. `expectStatus` names one exact status inst
 Alerts go out through [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/). Until that's set up, they're written to the container log.
 
 1. Onboard the sending domain in the Cloudflare dashboard (Email Service → Email Sending), or with `wrangler email sending enable <domain>`.
-2. Create an API token with the Email Sending permission, and save it in `secrets/cloudflare-email-token`. git ignores that folder, and it's mounted read-only.
+2. Create an API token with the Email Sending permission, and save it in `secrets/cloudflare-email-token`. git ignores that folder, and it's mounted read-only. The file must be readable by `CONTAINER_USER`. With `CONTAINER_USER=0` the container has no capabilities, so root can't bypass file permissions: make the file owned by root (mode `640`) and the folder `711`.
 3. Set `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` (an address on the onboarded domain) and `CLOUDFLARE_ACCOUNT_ID` in `.env`, then restart.
 4. Send a test: `docker exec hyphen-console node src/cli.ts test-email`.
 
