@@ -47,8 +47,21 @@ export class AppleClient {
   }
 
   async get<T>(pathOrUrl: string): Promise<T> {
+    return this.call<T>("GET", pathOrUrl);
+  }
+
+  async post<T>(path: string, body: unknown): Promise<T> {
+    return this.call<T>("POST", path, body);
+  }
+
+  async call<T>(method: string, pathOrUrl: string, body?: unknown): Promise<T> {
     const url = pathOrUrl.startsWith("http") ? pathOrUrl : API + pathOrUrl;
-    const res = await this.opts.fetch(url, { headers: { Authorization: `Bearer ${await this.token()}` }, signal: AbortSignal.timeout(30_000) });
+    const res = await this.opts.fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${await this.token()}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!res.ok) {
       const data = (await res.json().catch(() => null)) as { errors?: { title?: string; detail?: string }[] } | null;
       const why = data?.errors?.map((e) => e.detail || e.title).join("; ") || res.statusText;

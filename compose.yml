@@ -26,6 +26,8 @@ services:
       REVIEW_EMAILS: ${REVIEW_EMAILS:-all}
       APP_STORE_CONNECT_KEY_ID: ${APP_STORE_CONNECT_KEY_ID:-}
       APP_STORE_CONNECT_ISSUER_ID: ${APP_STORE_CONNECT_ISSUER_ID:-}
+      APP_STORE_CONNECT_FINANCE_KEY_ID: ${APP_STORE_CONNECT_FINANCE_KEY_ID:-}
+      VITALS_SYNC_HOURS: ${VITALS_SYNC_HOURS:-6}
     volumes:
       - ./config:/config:ro
       - ./secrets:/secrets:ro

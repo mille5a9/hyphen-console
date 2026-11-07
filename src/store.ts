@@ -49,6 +49,12 @@ export class Store {
         PRIMARY KEY (store, id)
       );
       CREATE INDEX IF NOT EXISTS reviews_app_updated ON reviews (app_id, updated_at);
+      CREATE TABLE IF NOT EXISTS metrics (
+        app_id TEXT NOT NULL, store TEXT NOT NULL, metric TEXT NOT NULL, date TEXT NOT NULL, value REAL NOT NULL,
+        PRIMARY KEY (app_id, store, metric, date)
+      );
+      CREATE TABLE IF NOT EXISTS report_instances (id TEXT PRIMARY KEY, app_id TEXT NOT NULL, metric TEXT NOT NULL, processed_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS review_sync (
         app_id TEXT NOT NULL, store TEXT NOT NULL, last_attempt INTEGER, last_ok INTEGER, last_error TEXT,
         PRIMARY KEY (app_id, store)
@@ -154,6 +160,55 @@ export class Store {
            last_ok = COALESCE(excluded.last_ok, review_sync.last_ok), last_error = excluded.last_error`,
       )
       .run(appId, store, at, error ? null : at, error);
+  }
+
+  /** Sets a day's value (Google: each fetch returns the whole recent timeline). */
+  setMetric(appId: string, store: string, metric: string, date: string, value: number) {
+    this.db
+      .prepare("INSERT INTO metrics (app_id, store, metric, date, value) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET value = excluded.value")
+      .run(appId, store, metric, date, value);
+  }
+
+  /** Values per date for some metrics since `fromDate` (YYYY-MM-DD), oldest first. */
+  metricSeries(appId: string, store: string, metrics: string[], fromDate: string): { date: string; values: Record<string, number> }[] {
+    const rows = this.db
+      .prepare(`SELECT metric, date, value FROM metrics WHERE app_id = ? AND store = ? AND date >= ? AND metric IN (${metrics.map(() => "?").join(",")}) ORDER BY date`)
+      .all(appId, store, fromDate, ...metrics) as { metric: string; date: string; value: number }[];
+    const byDate = new Map<string, Record<string, number>>();
+    for (const r of rows) {
+      const v = byDate.get(r.date) ?? {};
+      v[r.metric] = r.value;
+      byDate.set(r.date, v);
+    }
+    return [...byDate].map(([date, values]) => ({ date, values }));
+  }
+
+  instanceDone(id: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM report_instances WHERE id = ?").get(id);
+  }
+
+  /** Adds an Apple report instance's totals to each day and marks it done, all or nothing, so nothing counts twice. */
+  addInstance(id: string, appId: string, metric: string, totals: Map<string, number>, now: number) {
+    this.db.exec("BEGIN");
+    try {
+      const add = this.db.prepare(
+        "INSERT INTO metrics (app_id, store, metric, date, value) VALUES (?, 'apple', ?, ?, ?) ON CONFLICT DO UPDATE SET value = value + excluded.value",
+      );
+      for (const [date, n] of totals) add.run(appId, metric, date, n);
+      this.db.prepare("INSERT INTO report_instances (id, app_id, metric, processed_at) VALUES (?, ?, ?, ?)").run(id, appId, metric, now);
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  getMeta(key: string): string | undefined {
+    return (this.db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined)?.value;
+  }
+
+  setMeta(key: string, value: string) {
+    this.db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT DO UPDATE SET value = excluded.value").run(key, value);
   }
 
   prune(now: number) {

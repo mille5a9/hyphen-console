@@ -6,8 +6,9 @@ A small self-hosted console for an indie developer with apps on the App Store an
 - One download page per app for test builds (Android APKs with their Play bundles, and iOS IPAs), so a phone can install the latest build straight from the NAS.
 - Health checks on each app's backend, with uptime history and an email when something goes down and when it recovers.
 - Reviews from the App Store and Google Play, kept over time, with an email when new ones arrive.
+- Vitals: Google Play's crash and ANR rates against Play's bad-behavior thresholds (with an email if an app crosses one), and App Store crashes per 1,000 sessions.
 
-**Next:** crash and ANR rates from both stores, in the same place. See [Roadmap](#roadmap).
+**Next:** a weekly digest email. See [Roadmap](#roadmap).
 
 <img src="docs/builds-page.png" alt="An app's builds page: the newest Android build on top, iPhone builds, then every Android build with its Play bundle" width="360">
 
@@ -80,6 +81,20 @@ The first successful fetch from each store only fills the history, so no email g
 
 `docker exec hyphen-console node src/cli.ts reviews` tests the credentials: it fetches one page from each store and saves nothing.
 
+### Vitals
+
+**Google Play:** the service account from Reviews, with the **Google Play Developer Reporting API** also enabled in its Cloud project. The console reads the daily user-perceived crash and ANR rates for the last 30 days. It sends an email when either 28-day rate crosses Play's bad-behavior threshold (1.09% for crashes, 0.47% for ANRs), and another when it's back under.
+
+**App Store:** Apple doesn't answer queries. It generates reports daily once an *ongoing report request* exists for the app. Reading those reports needs a team key with the **Finance** role: save it as `secrets/app-store-connect-finance.p8` and set `APP_STORE_CONNECT_FINANCE_KEY_ID`. Only an **Admin** key can start the request, so do that once with a temporary Admin key, then revoke it:
+
+```bash
+docker exec hyphen-console node src/cli.ts apple-report-request <admin key id> /secrets/<admin key>.p8
+```
+
+The first reports arrive 1–2 days later. The console sums the **App Crashes** and **App Sessions** reports per day (late data is added to the day it belongs to, and each report instance is counted once) and shows crashes per 1,000 sessions. Apple only counts people who share analytics with developers.
+
+`docker exec hyphen-console node src/cli.ts vitals` checks both stores' access and saves nothing.
+
 ### Settings
 
 | Variable | Default | Meaning |
@@ -100,6 +115,8 @@ The first successful fetch from each store only fills the history, so no email g
 | `REVIEW_EMAILS` | `all` | Which new reviews to email: `all`, `low` (1–2 stars) or `off` |
 | `APP_STORE_CONNECT_KEY_ID` | — | App Store Connect API key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | — | App Store Connect issuer ID |
+| `APP_STORE_CONNECT_FINANCE_KEY_ID` | — | Key ID of the Finance-role key used for analytics reports |
+| `VITALS_SYNC_HOURS` | `6` | Time between vitals fetches |
 
 ## API
 
@@ -108,6 +125,7 @@ The first successful fetch from each store only fills the history, so no email g
 | `GET /api/apps` | `[{ id, name }]` |
 | `GET /api/status` | Every health check: up or down, since when, the last result, and 24-hour and 7-day uptime |
 | `GET /api/apps/<id>/reviews` | `{ summary, sync, reviews }`: rating per store, last fetch per store, newest 50 reviews |
+| `GET /api/apps/<id>/vitals` | `{ google, apple }`: Play's 28-day rates, thresholds and daily series; App Store crashes and sessions |
 | `GET /api/apps/<id>/builds` | `{ app, android: Build[], ios: Build[] }`, newest first |
 | `GET /files/<id>/<file>` | The build file, with range support |
 | `GET /healthz` | `ok` |
@@ -125,7 +143,7 @@ CONFIG_FILE=config/apps.json BUILDS_ROOT=/path/to/builds PORT=8096 npm run dev
 1. ~~Multi-app builds page~~
 2. ~~Health checks for each app's backend, with email alerts~~
 3. ~~Reviews from both stores, kept over time~~
-4. Crash and ANR rates (Play Developer Reporting API) and crashes, installs and sessions (App Store Connect Analytics Reports API)
+4. ~~Crash and ANR rates (Play Developer Reporting API), crashes and sessions (App Store Connect Analytics Reports API)~~
 5. A weekly digest
 
 ## License

@@ -17,6 +17,8 @@ export interface Options {
   status?: () => unknown[];
   /** Saved reviews and per-store summary for one app. */
   reviews?: (appId: string) => unknown;
+  /** Crash and ANR numbers for one app. */
+  vitals?: (appId: string) => unknown;
   log?: (line: string) => void;
 }
 
@@ -132,6 +134,12 @@ export function createHandler(opts: Options) {
     if (m) {
       if (!byId.has(m[1] ?? "")) return json(res, 404, { error: "No such app" });
       return json(res, 200, opts.reviews?.(m[1]!) ?? { summary: [], sync: {}, reviews: [] });
+    }
+
+    m = /^\/api\/apps\/([a-z0-9-]+)\/vitals$/.exec(path);
+    if (m) {
+      if (!byId.has(m[1] ?? "")) return json(res, 404, { error: "No such app" });
+      return json(res, 200, opts.vitals?.(m[1]!) ?? {});
     }
 
     m = /^\/files\/([a-z0-9-]+)\/([^/]+)$/.exec(path);
