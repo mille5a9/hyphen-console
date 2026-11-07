@@ -13,6 +13,8 @@ export interface Options {
   /** Folder with index.html, app.js and app.css. */
   publicDir: string;
   isAllowed: (address: string | undefined) => boolean;
+  /** Current health of every check (see Monitor.status). */
+  status?: () => unknown[];
   log?: (line: string) => void;
 }
 
@@ -114,6 +116,7 @@ export function createHandler(opts: Options) {
     if (staticType) return sendStatic(res, path.slice(1), staticType);
 
     if (path === "/api/apps") return json(res, 200, opts.apps.map(({ id, name }) => ({ id, name })));
+    if (path === "/api/status") return json(res, 200, opts.status?.() ?? []);
 
     let m = /^\/api\/apps\/([a-z0-9-]+)\/builds$/.exec(path);
     if (m) {

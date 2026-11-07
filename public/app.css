@@ -14,7 +14,7 @@ section + section { margin-top: 28px; }
 section > p { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
 ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 li { display: flex; gap: 8px; }
-li a { flex: 1; display: flex; justify-content: space-between; gap: 12px; text-decoration: none; color: var(--text); background: var(--card); border: 1.5px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+li a, li .box { flex: 1; display: flex; justify-content: space-between; gap: 12px; text-decoration: none; color: var(--text); background: var(--card); border: 1.5px solid var(--border); border-radius: 14px; padding: 12px 14px; }
 li .name { font-weight: 600; overflow-wrap: anywhere; }
 li .meta { color: var(--muted); font-size: 13px; white-space: nowrap; text-align: right; }
 li a.side { flex: 0 0 auto; flex-direction: column; justify-content: center; align-items: center; gap: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -28,3 +28,11 @@ li a.side b { color: var(--text); font-size: 14px; }
 .apps .name { font-size: 18px; }
 .apps .meta { text-align: left; white-space: normal; }
 .msg { color: var(--muted); }
+.status { margin: 16px 0 28px; }
+.status .name { font-weight: 600; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; background: var(--muted); }
+.dot.up { background: var(--accent); }
+.dot.warn { background: #d99a1e; }
+.dot.down { background: #d64545; }
+.apps .check { color: var(--text); }
+.status .detail { font-weight: 400; color: var(--muted); font-size: 13px; }

@@ -2,19 +2,22 @@
 
 A small self-hosted console for an indie developer with apps on the App Store and Google Play. It runs on a home server and is reachable only from the home network and a Tailscale tailnet.
 
-**Today:** one download page per app for test builds (Android APKs with their Play bundles, and iOS IPAs), so a phone can install the latest build straight from the NAS.
+**Today:**
+- One download page per app for test builds (Android APKs with their Play bundles, and iOS IPAs), so a phone can install the latest build straight from the NAS.
+- Health checks on each app's backend, with uptime history and an email when something goes down and when it recovers.
 
-**Next:** gather the things worth checking every week into one place, for every app: crash and ANR rates from both stores, new reviews, and whether each app's backend is up. Alerts arrive when something needs attention. See [Roadmap](#roadmap).
+**Next:** crash and ANR rates and new reviews from both stores, in the same place. See [Roadmap](#roadmap).
 
 <img src="docs/builds-page.png" alt="An app's builds page: the newest Android build on top, iPhone builds, then every Android build with its Play bundle" width="360">
 
 ## Design
 
-- **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping), and the server uses only `node:http` and `node:fs`. `typescript` and `@types/node` are dev-only, for type checking.
+- **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping). The server uses only Node built-ins: `node:http`, `node:fs`, and `node:sqlite` for check history. `typescript` and `@types/node` are dev-only, for type checking.
 - **Configuration lives outside the repo.** Machine-specific settings go in `.env` and `config/apps.json`, and git ignores both. The committed `.env.example` and `config/apps.example.json` hold only placeholders. API keys for later phases will go in `secrets/`, which git also ignores.
 - **Private by default.** The server refuses any client outside an allowlist of CIDRs: private LAN ranges, Docker's bridge, loopback and Tailscale. Override it with `ALLOWED_CIDRS`. It answers only `GET` and `HEAD`.
 - **Serves build files only.** File URLs must name a build of that app (`<prefix>-<x.y.z>….apk|aab|ipa`, or its `.sha256`). Other files in the folder, paths and dot files are never served. Downloads support byte ranges, so a phone can resume a large APK.
-- **Locked-down container.** No Linux capabilities, `no-new-privileges`, a read-only root filesystem and read-only mounts. It runs as the unprivileged `node` user unless `CONTAINER_USER` says otherwise.
+- **Locked-down container.** No Linux capabilities, `no-new-privileges`, a read-only root filesystem, and read-only mounts apart from `data/`. It runs as the unprivileged `node` user unless `CONTAINER_USER` says otherwise.
+- **Alerts that don't cry wolf.** A check counts as down only after `CHECK_FAIL_THRESHOLD` failures in a row (2 by default), and an outage sends exactly one "down" email and one "recovered" email.
 - **Strict headers.** A same-origin Content Security Policy (the page's script and styles are separate files, not inline), plus `nosniff`, `no-referrer` and frame denial.
 - **CI** type-checks, runs the tests, builds the image, and runs [gitleaks](https://github.com/gitleaks/gitleaks) over the full history.
 
@@ -23,6 +26,7 @@ A small self-hosted console for an indie developer with apps on the App Store an
 ```bash
 cp .env.example .env                           # set BUILDS_ROOT, PORT
 cp config/apps.example.json config/apps.json   # list your apps
+mkdir -p data secrets                          # data/ must be writable by CONTAINER_USER
 docker compose up -d --build
 ```
 
@@ -37,7 +41,31 @@ Builds go in `<BUILDS_ROOT>/<app id>/`, named `<filePrefix>-<version>[-<extra>][
 
 Copy builds in under a temporary dot-file name and rename them when the copy finishes, so the page never lists a half-copied file. A `<file>.sha256` beside a build is linked from the API.
 
-Open `http://<server>:<PORT>/` for the app list, or `/apps/<id>` for one app's builds.
+Open `http://<server>:<PORT>/` for the app list, or `/apps/<id>` for one app's status and builds.
+
+### Health checks
+
+List them per app in `config/apps.json`:
+
+```json
+"health": [
+  { "name": "API", "url": "https://api.example.com/health" },
+  { "name": "Proxy", "url": "https://proxy.example.com/", "expectStatus": 401 }
+]
+```
+
+By default a check passes on any 2xx. `expectStatus` names one exact status instead. For an API that needs a key, expect its 401: the check still proves the service answers, and it costs nothing upstream. Redirects aren't followed. Results are kept for 90 days.
+
+### Alert email
+
+Alerts go out through [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/). Until that's set up, they're written to the container log.
+
+1. Onboard the sending domain in the Cloudflare dashboard (Email Service → Email Sending), or with `wrangler email sending enable <domain>`.
+2. Create an API token with the Email Sending permission, and save it in `secrets/cloudflare-email-token`. git ignores that folder, and it's mounted read-only.
+3. Set `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` (an address on the onboarded domain) and `CLOUDFLARE_ACCOUNT_ID` in `.env`, then restart.
+4. Send a test: `docker exec hyphen-console node src/cli.ts test-email`.
+
+`docker exec hyphen-console node src/cli.ts check` runs every health check once and prints the results.
 
 ### Settings
 
@@ -48,12 +76,20 @@ Open `http://<server>:<PORT>/` for the app list, or `/apps/<id>` for one app's b
 | `BUILDS_ROOT` | — | Host folder with one subfolder per app (required) |
 | `ALLOWED_CIDRS` | private ranges, loopback, Tailscale | Comma-separated client allowlist |
 | `CONTAINER_USER` | `node` | Set `0` for NFS exports that refuse container uids (the container stays capability-free and read-only) |
+| `TZ` | `UTC` | Time zone for times in alert emails |
+| `CONSOLE_URL` | — | This console's address, for links in alert emails |
+| `CHECK_INTERVAL_SECONDS` | `120` | Time between health-check rounds (minimum 30) |
+| `CHECK_FAIL_THRESHOLD` | `2` | Failures in a row before a check counts as down |
+| `ALERT_EMAIL_TO` | — | Alert recipient. Empty means alerts are only logged |
+| `ALERT_EMAIL_FROM` | — | Sender, on a domain onboarded to Cloudflare Email Sending |
+| `CLOUDFLARE_ACCOUNT_ID` | — | The Cloudflare account that sends |
 
 ## API
 
 | Route | Returns |
 |---|---|
 | `GET /api/apps` | `[{ id, name }]` |
+| `GET /api/status` | Every health check: up or down, since when, the last result, and 24-hour and 7-day uptime |
 | `GET /api/apps/<id>/builds` | `{ app, android: Build[], ios: Build[] }`, newest first |
 | `GET /files/<id>/<file>` | The build file, with range support |
 | `GET /healthz` | `ok` |
@@ -69,7 +105,7 @@ CONFIG_FILE=config/apps.json BUILDS_ROOT=/path/to/builds PORT=8096 npm run dev
 ## Roadmap
 
 1. ~~Multi-app builds page~~
-2. Health checks for each app's backend, with alerts
+2. ~~Health checks for each app's backend, with email alerts~~
 3. Reviews from both stores, kept over time (Google Play's API only returns the last week)
 4. Crash and ANR rates (Play Developer Reporting API) and crashes, installs and sessions (App Store Connect Analytics Reports API)
 5. A weekly digest

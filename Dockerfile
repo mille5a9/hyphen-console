@@ -1,7 +1,7 @@
 # No dependencies at runtime and no build step: Node runs the TypeScript directly.
 FROM node:24-alpine
 WORKDIR /app
-ENV NODE_ENV=production PORT=8080 CONFIG_FILE=/config/apps.json BUILDS_ROOT=/srv/builds
+ENV NODE_ENV=production PORT=8080 CONFIG_FILE=/config/apps.json BUILDS_ROOT=/srv/builds DATA_DIR=/data
 COPY package.json ./
 COPY src ./src
 COPY public ./public

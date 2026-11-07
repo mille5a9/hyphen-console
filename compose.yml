@@ -15,6 +15,16 @@ services:
       - "${BIND_IP:-0.0.0.0}:${PORT:-8095}:8080"
     environment:
       ALLOWED_CIDRS: ${ALLOWED_CIDRS:-}
+      TZ: ${TZ:-UTC}
+      CONSOLE_URL: ${CONSOLE_URL:-}
+      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
+      CHECK_FAIL_THRESHOLD: ${CHECK_FAIL_THRESHOLD:-2}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
     volumes:
       - ./config:/config:ro
+      - ./secrets:/secrets:ro
+      # Check history (SQLite). The only writable path in the container.
+      - ./data:/data
       - ${BUILDS_ROOT:?set BUILDS_ROOT in .env}:/srv/builds:ro

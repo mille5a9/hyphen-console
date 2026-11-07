@@ -5,7 +5,11 @@
       "name": "Example App",
       "filePrefix": "example-app",
       "ios": { "bundleId": "com.example.app" },
-      "android": { "package": "com.example.app" }
+      "android": { "package": "com.example.app" },
+      "health": [
+        { "name": "API", "url": "https://api.example.com/health" },
+        { "name": "Proxy", "url": "https://proxy.example.com/", "expectStatus": 401 }
+      ]
     }
   ]
 }
