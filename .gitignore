@@ -1,0 +1,9 @@
+# Everything specific to one machine stays out of the repo. Committed files use placeholders only.
+.env
+config/apps.json
+secrets/
+data/
+
+node_modules/
+*.log
+.DS_Store

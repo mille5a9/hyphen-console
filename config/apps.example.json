@@ -1,0 +1,11 @@
+{
+  "apps": [
+    {
+      "id": "example-app",
+      "name": "Example App",
+      "filePrefix": "example-app",
+      "ios": { "bundleId": "com.example.app" },
+      "android": { "package": "com.example.app" }
+    }
+  ]
+}

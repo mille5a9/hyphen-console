@@ -1,0 +1,20 @@
+# Settings come from .env (copy .env.example) and config/apps.json (copy config/apps.example.json). Both stay out of git.
+services:
+  console:
+    build: .
+    image: hyphen-console:local
+    container_name: hyphen-console
+    restart: unless-stopped
+    # Runs as the image's unprivileged "node" user unless .env says otherwise (see CONTAINER_USER in .env.example).
+    # Either way it gets no Linux capabilities, a read-only filesystem and read-only mounts.
+    user: ${CONTAINER_USER:-node}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    ports:
+      - "${BIND_IP:-0.0.0.0}:${PORT:-8095}:8080"
+    environment:
+      ALLOWED_CIDRS: ${ALLOWED_CIDRS:-}
+    volumes:
+      - ./config:/config:ro
+      - ${BUILDS_ROOT:?set BUILDS_ROOT in .env}:/srv/builds:ro
