@@ -28,6 +28,9 @@ services:
       APP_STORE_CONNECT_ISSUER_ID: ${APP_STORE_CONNECT_ISSUER_ID:-}
       APP_STORE_CONNECT_FINANCE_KEY_ID: ${APP_STORE_CONNECT_FINANCE_KEY_ID:-}
       VITALS_SYNC_HOURS: ${VITALS_SYNC_HOURS:-6}
+      DIGEST: ${DIGEST:-on}
+      DIGEST_DAY: ${DIGEST_DAY:-monday}
+      DIGEST_HOUR: ${DIGEST_HOUR:-8}
     volumes:
       - ./config:/config:ro
       - ./secrets:/secrets:ro

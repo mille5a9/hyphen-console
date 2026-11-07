@@ -3,6 +3,7 @@
 //   docker exec hyphen-console node src/cli.ts check        # run every health check once and print the results
 //   docker exec hyphen-console node src/cli.ts reviews      # fetch reviews from each store once and print a count (saves nothing)
 //   docker exec hyphen-console node src/cli.ts vitals       # read Play vitals and list Apple's analytics reports (saves nothing)
+//   docker exec hyphen-console node src/cli.ts digest [--send] # print this week's digest, or email it now
 //   docker exec hyphen-console node src/cli.ts apple-report-request <key id> <.p8 file>
 //       start Apple's daily analytics reports for every app, with a one-time Admin key (revoke it afterwards)
 import { loadApps } from "./config.ts";
@@ -11,6 +12,9 @@ import { mailerFromEnv } from "./mail.ts";
 import { sourcesFromEnv } from "./reviews.ts";
 import type { GoogleClient } from "./stores/google.ts";
 import { vitalsSourcesFromEnv } from "./vitals.ts";
+import { buildDigest } from "./digest.ts";
+import { Store } from "./store.ts";
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { AppleClient } from "./stores/apple.ts";
 import { AppleAnalytics, createReportRequest } from "./stores/apple-analytics.ts";
@@ -84,6 +88,25 @@ if (command === "test-email") {
       }
     }
   }
+} else if (command === "digest") {
+  // Reads the live database (read-only use): run it inside the container, next to the server.
+  const store = new Store(join(process.env.DATA_DIR ?? "data", "console.db"));
+  const email = await buildDigest({
+    apps: loadApps(process.env.CONFIG_FILE ?? "config/apps.json"),
+    store,
+    buildsRoot: process.env.BUILDS_ROOT ?? "builds",
+    now: Date.now(),
+    timeZone: process.env.TZ || "UTC",
+    consoleUrl: process.env.CONSOLE_URL,
+  });
+  store.close();
+  if (process.argv.includes("--send")) {
+    const mailer = mailerFromEnv(process.env, log);
+    await mailer.send(email);
+    console.log(`Sent "${email.subject}" (${mailer.describe()}).`);
+  } else {
+    console.log(`Subject: ${email.subject}\n\n${email.text}`);
+  }
 } else if (command === "apple-report-request") {
   const [keyId, keyFile] = process.argv.slice(3);
   const issuerId = process.env.APP_STORE_CONNECT_ISSUER_ID;
@@ -103,6 +126,6 @@ if (command === "test-email") {
   }
   console.log("Done. You can revoke the Admin key now.");
 } else {
-  console.error("Usage: node src/cli.ts test-email | check | reviews | vitals | apple-report-request");
+  console.error("Usage: node src/cli.ts test-email | check | reviews | vitals | digest [--send] | apple-report-request");
   process.exit(2);
 }

@@ -10,6 +10,7 @@ import { alertEmail, mailerFromEnv } from "./mail.ts";
 import type { GoogleClient } from "./stores/google.ts";
 import { reviewEmail, type ReviewEmails, sourcesFromEnv, syncReviews } from "./reviews.ts";
 import { Store } from "./store.ts";
+import { buildDigest, digestDue } from "./digest.ts";
 import { syncVitals, vitalsEmail, vitalsSourcesFromEnv, vitalsView } from "./vitals.ts";
 
 const env = process.env;
@@ -59,6 +60,13 @@ async function round() {
   try {
     for (const t of await monitor.tick()) {
       log(`${t.kind}: ${t.check.key} (${t.result.error ?? `HTTP ${t.result.status}`})`);
+      store.addEvent({
+        at: t.result.at,
+        appId: t.app.id,
+        kind: t.kind === "down" ? "outage" : "recovered",
+        subject: t.check.name,
+        detail: t.kind === "down" ? (t.result.error ?? "") : String(t.result.at - t.downSince),
+      });
       await mailer.send(alertEmail(t, env.CONSOLE_URL)).catch((e) => log(`alert email failed: ${(e as Error).message}`));
     }
   } catch (e) {
@@ -99,6 +107,7 @@ async function vitalsRound() {
     for (const e of errors) log(`vitals sync: ${e}`);
     for (const a of alerts) {
       log(`vitals ${a.kind}: ${a.app.id} ${a.which} ${a.value}`);
+      store.addEvent({ at: Date.now(), appId: a.app.id, kind: `vitals-${a.kind}`, subject: a.which, detail: String(a.value) });
       await mailer.send(vitalsEmail(a, env.CONSOLE_URL)).catch((e) => log(`vitals email failed: ${(e as Error).message}`));
     }
   } catch (e) {
@@ -112,11 +121,39 @@ if (vitalsStores.length) {
   void vitalsRound();
 }
 
+// Weekly digest, checked every 15 minutes so a restart around send time doesn't skip or repeat it.
+const digest = {
+  on: (env.DIGEST ?? "on") !== "off",
+  day: (env.DIGEST_DAY ?? "monday").toLowerCase(),
+  hour: Math.min(23, Math.max(0, Number(env.DIGEST_HOUR ?? 8))),
+  timeZone: env.TZ || "UTC",
+};
+let digestTimer: NodeJS.Timeout | undefined;
+async function digestTick() {
+  try {
+    const due = digestDue(Date.now(), { ...digest, lastSent: store.getMeta("digest-last-sent") });
+    if (due) {
+      const email = await buildDigest({ apps, store, buildsRoot, now: Date.now(), timeZone: digest.timeZone, consoleUrl: env.CONSOLE_URL });
+      await mailer.send(email);
+      store.setMeta("digest-last-sent", due);
+      log(`weekly digest sent: ${email.subject}`);
+    }
+  } catch (e) {
+    log(`weekly digest failed: ${(e as Error).message}`);
+  }
+  digestTimer = setTimeout(digestTick, 15 * 60_000);
+}
+if (digest.on) {
+  log(`weekly digest ${digest.day}s at ${digest.hour}:00 ${digest.timeZone}`);
+  void digestTick();
+}
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     clearTimeout(timer);
     clearTimeout(reviewTimer);
     clearTimeout(vitalsTimer);
+    clearTimeout(digestTimer);
     server.close(() => {
       store.close();
       process.exit(0);

@@ -7,8 +7,7 @@ A small self-hosted console for an indie developer with apps on the App Store an
 - Health checks on each app's backend, with uptime history and an email when something goes down and when it recovers.
 - Reviews from the App Store and Google Play, kept over time, with an email when new ones arrive.
 - Vitals: Google Play's crash and ANR rates against Play's bad-behavior thresholds (with an email if an app crosses one), and App Store crashes per 1,000 sessions.
-
-**Next:** a weekly digest email. See [Roadmap](#roadmap).
+- A weekly digest email with all of the above for every app, listing what needs a look first. See [Roadmap](#roadmap).
 
 <img src="docs/builds-page.png" alt="An app's builds page: the newest Android build on top, iPhone builds, then every Android build with its Play bundle" width="360">
 
@@ -95,6 +94,17 @@ The first reports arrive 1–2 days later. The console sums the **App Crashes** 
 
 `docker exec hyphen-console node src/cli.ts vitals` checks both stores' access and saves nothing.
 
+### Weekly digest
+
+One plain-text email a week, on `DIGEST_DAY` at `DIGEST_HOUR` in `TZ` (Monday at 8:00 by default). It opens with anything that needs a look: an outage, a check that's still down, a 1–2 star review, a Play rate over its limit, or a store that stopped answering. Then each app gets:
+
+- **Uptime:** each check's uptime for the week, the number of outages and the longest one
+- **Reviews:** new reviews by store and their average rating, low ratings quoted (with how many have no reply yet), and all-time averages
+- **Vitals:** Play's 28-day crash and ANR rates against their limits, with the change from a week earlier; App Store crashes per 1,000 sessions against the week before
+- **Builds:** builds published that week
+
+The server checks every 15 minutes whether the digest is due and remembers the day it last sent one, so a restart neither skips nor repeats it. `docker exec hyphen-console node src/cli.ts digest` prints this week's digest, and `--send` emails it now.
+
 ### Settings
 
 | Variable | Default | Meaning |
@@ -104,7 +114,7 @@ The first reports arrive 1–2 days later. The console sums the **App Crashes** 
 | `BUILDS_ROOT` | — | Host folder with one subfolder per app (required) |
 | `ALLOWED_CIDRS` | private ranges, loopback, Tailscale | Comma-separated client allowlist |
 | `CONTAINER_USER` | `node` | Set `0` for NFS exports that refuse container uids (the container stays capability-free and read-only) |
-| `TZ` | `UTC` | Time zone for times in alert emails |
+| `TZ` | `UTC` | Time zone for alert-email times and the digest schedule |
 | `CONSOLE_URL` | — | This console's address, for links in alert emails |
 | `CHECK_INTERVAL_SECONDS` | `120` | Time between health-check rounds (minimum 30) |
 | `CHECK_FAIL_THRESHOLD` | `2` | Failures in a row before a check counts as down |
@@ -117,6 +127,9 @@ The first reports arrive 1–2 days later. The console sums the **App Crashes** 
 | `APP_STORE_CONNECT_ISSUER_ID` | — | App Store Connect issuer ID |
 | `APP_STORE_CONNECT_FINANCE_KEY_ID` | — | Key ID of the Finance-role key used for analytics reports |
 | `VITALS_SYNC_HOURS` | `6` | Time between vitals fetches |
+| `DIGEST` | `on` | `off` stops the weekly digest |
+| `DIGEST_DAY` | `monday` | Day the digest goes out |
+| `DIGEST_HOUR` | `8` | Hour (0–23, in `TZ`) the digest goes out |
 
 ## API
 
@@ -144,7 +157,7 @@ CONFIG_FILE=config/apps.json BUILDS_ROOT=/path/to/builds PORT=8096 npm run dev
 2. ~~Health checks for each app's backend, with email alerts~~
 3. ~~Reviews from both stores, kept over time~~
 4. ~~Crash and ANR rates (Play Developer Reporting API), crashes and sessions (App Store Connect Analytics Reports API)~~
-5. A weekly digest
+5. ~~A weekly digest~~
 
 ## License
 

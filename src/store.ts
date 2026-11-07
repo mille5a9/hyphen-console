@@ -55,6 +55,8 @@ export class Store {
       );
       CREATE TABLE IF NOT EXISTS report_instances (id TEXT PRIMARY KEY, app_id TEXT NOT NULL, metric TEXT NOT NULL, processed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS events (at INTEGER NOT NULL, app_id TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT NOT NULL, detail TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS events_at ON events (at);
       CREATE TABLE IF NOT EXISTS review_sync (
         app_id TEXT NOT NULL, store TEXT NOT NULL, last_attempt INTEGER, last_ok INTEGER, last_error TEXT,
         PRIMARY KEY (app_id, store)
@@ -201,6 +203,22 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  /** Things worth a line in the weekly digest: outages, recoveries, vitals crossing Play's limits. */
+  addEvent(e: { at: number; appId: string; kind: string; subject: string; detail: string }) {
+    this.db.prepare("INSERT INTO events (at, app_id, kind, subject, detail) VALUES (?, ?, ?, ?, ?)").run(e.at, e.appId, e.kind, e.subject, e.detail);
+  }
+
+  events(appId: string, from: number, to: number): { at: number; kind: string; subject: string; detail: string }[] {
+    return this.db.prepare("SELECT at, kind, subject, detail FROM events WHERE app_id = ? AND at >= ? AND at < ? ORDER BY at").all(appId, from, to) as {
+      at: number; kind: string; subject: string; detail: string;
+    }[];
+  }
+
+  /** Reviews first seen in [from, to). */
+  newReviews(appId: string, from: number, to: number): (Review & { firstSeen: number })[] {
+    return this.reviews(appId, 10_000).filter((r) => r.firstSeen >= from && r.firstSeen < to);
   }
 
   getMeta(key: string): string | undefined {
